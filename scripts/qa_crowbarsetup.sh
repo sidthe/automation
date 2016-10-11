@@ -1763,7 +1763,7 @@ function reboot_nodes_via_ipmi
     IFS=. read ip1 ip2 ip3 ip4 <<< "${bmc_values[0]}"
     local bmc_net="$ip1.$ip2.$ip3"
     local i
-    for i in $(seq 1 $nodenumbertotal); do
+    for i in $(seq 1 $(nodes number all)); do
         local ip=$bmc_net.$(($ip4 + $i))
         local ipmicmd="ipmitool -H $ip -U root"
         local pw
@@ -1775,7 +1775,7 @@ function reboot_nodes_via_ipmi
         done
         safely timeout 2 $ipmicmd mc selftest
 
-        if [ $i -gt $nodenumber ]; then
+        if [ $i -gt $(nodes number all) ]; then
             # power off extra nodes
             $ipmicmd power off
             wait_for 30 5 "$ipmicmd power status | grep -q 'is off'" "node ($ip) to power off"
