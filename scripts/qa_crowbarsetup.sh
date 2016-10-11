@@ -1764,41 +1764,47 @@ function reboot_nodes_via_ipmi
     local bmc_net="$ip1.$ip2.$ip3"
     local i
     for i in $(seq 1 $nodenumbertotal); do
+        local ip=$bmc_net.$(($ip4 + $i))
+        local ipmicmd="ipmitool -H $ip -U root"
         local pw
         for pw in 'cr0wBar!' $extraipmipw ; do
-            local ip=$bmc_net.$(($ip4 + $i))
-            local ipmicmd="ipmitool -H $ip -U root -P $pw"
-            if [ $i -gt $nodenumber ]; then
-                # power off extra nodes
-                $ipmicmd power off
-                wait_for 30 5 "$ipmicmd power status | grep -q 'is off'" "node ($ip) to power off"
-            else
-                ping -c 3 $ip > /dev/null || {
-                    echo "error: BMC $ip is not reachable!"
-                }
-
-                $ipmicmd lan set 1 defgw ipaddr "${bmc_values[1]}"
-                wait_for 60 3 \
-                    "$ipmicmd lan print | grep 'Default Gateway IP' | grep -q ${bmc_values[1]}" \
-                    "default gateway to be active in bmc"
-
-                $ipmicmd chassis bootdev pxe options=persistent
-                wait_for 30 1 \
-                    "! timeout 2 $ipmicmd mc selftest" \
-                    "BMC to start rebooting due to setting bootdev" \
-                    "echo 'Warning: BMC mostlikely booted faster than I expected'"
-                wait_for 60 3 \
-                    "timeout 2 $ipmicmd mc selftest" \
-                    "BMC to have rebooted due to setting bootdev"
-
-                if $ipmicmd power status | grep -q "is off"; then
-                    $ipmicmd power on
-                else
-                    $ipmicmd power cycle
-                fi
-                wait_for 60 3 "$ipmicmd power status | grep -q 'is on'" "node ($ip) to power on"
+            if timeout 2 $ipmicmd -P $pw mc selftest ; then
+                ipmicmd+=" -P $pw"
+                break
             fi
         done
+        safely timeout 2 $ipmicmd mc selftest
+
+        if [ $i -gt $nodenumber ]; then
+            # power off extra nodes
+            $ipmicmd power off
+            wait_for 30 5 "$ipmicmd power status | grep -q 'is off'" "node ($ip) to power off"
+        else
+            ping -c 3 $ip > /dev/null || {
+                echo "error: BMC $ip is not reachable!"
+            }
+
+            $ipmicmd lan set 1 defgw ipaddr "${bmc_values[1]}"
+            wait_for 60 3 \
+                "$ipmicmd lan print | grep 'Default Gateway IP' | grep -q ${bmc_values[1]}" \
+                "default gateway to be active in bmc"
+
+            $ipmicmd chassis bootdev pxe options=persistent
+            wait_for 30 1 \
+                "! timeout 2 $ipmicmd mc selftest" \
+                "BMC to start rebooting due to setting bootdev" \
+                "echo 'Warning: BMC mostlikely booted faster than I expected'"
+            wait_for 60 3 \
+                "timeout 2 $ipmicmd mc selftest" \
+                "BMC to have rebooted due to setting bootdev"
+
+            if $ipmicmd power status | grep -q "is off"; then
+                $ipmicmd power on
+            else
+                $ipmicmd power cycle
+            fi
+            wait_for 60 3 "$ipmicmd power status | grep -q 'is on'" "node ($ip) to power on"
+        fi
     done
     wait
 }
